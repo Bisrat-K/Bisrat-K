@@ -1,0 +1,16 @@
+{
+  "name": "nigat-voice-coach",
+  "version": "1.0.0",
+  "description": "Personal voice agent (Amharic + English) for waking up early and staying productive, powered by Claude.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
+    "zod": "^4.6.7"
+  }
+}
