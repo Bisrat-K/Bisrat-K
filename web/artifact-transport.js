@@ -15,6 +15,14 @@ const SAMPLE_ERRORS = {
   rate_limited: "You've hit a Claude usage limit. Wait a little, then try again.",
   tools_unavailable: "This view can't run Nigat's tools. Open the page in a Chrome browser tab.",
   cancelled: "Stopped.",
+  session_expired: "Your Claude sign-in expired. Reload the page and sign in again.",
+  capability_disabled: "Using Claude from pages is turned off for this account or organization.",
+  not_declared: "This page isn't set up to use Claude. Tell Claude Code to republish it.",
+  refused: "Claude declined that request. Try saying it another way.",
+  empty_completion: "Claude sent an empty answer. Try again.",
+  invalid_json: "Claude's answer came back garbled. Try again.",
+  upstream_error: "Claude had a temporary problem. Try again in a moment.",
+  queue_overflow: "Too many requests at once. Wait a moment and try again.",
 };
 
 function localPersist() {
@@ -97,7 +105,12 @@ async function init() {
     },
   });
 
-  globalThis.NIGAT_VOICE = { dictation, tts, permissions, storage };
+  let claudeStatus = sample ? "ready" : "unavailable";
+  if (sample) {
+    const limits = await sample.limits?.().catch(() => null);
+    if (limits && !limits.tools) claudeStatus = "ready (simple mode)";
+  }
+  globalThis.NIGAT_VOICE = { dictation, tts, permissions, storage, claudeStatus };
   return route;
 }
 
@@ -110,7 +123,8 @@ globalThis.NIGAT_TRANSPORT = async (method, path, body) => {
     return { status: 200, body: await route(method, path, body ?? {}) };
   } catch (err) {
     if (err && typeof err.code === "string" && !(err instanceof HttpError)) {
-      return { status: 502, body: { error: SAMPLE_ERRORS[err.code] || `Claude couldn't answer (${err.code}). Try again.` } };
+      const msg = SAMPLE_ERRORS[err.code] || "Claude couldn't answer. Try again.";
+      return { status: 502, body: { error: `${msg} [${err.code}]` } };
     }
     return { status: err.status || 500, body: { error: err.message || "Something went wrong" } };
   }

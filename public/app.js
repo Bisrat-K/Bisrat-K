@@ -522,11 +522,22 @@ $("startBtn").onclick = async () => {
   try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch {}
 };
 
+function renderStatus() {
+  const v = globalThis.NIGAT_VOICE;
+  if (!CLAUDE_PAGE || !v) return;
+  const ok = (b) => (b ? "✓" : "✗");
+  $("status").textContent =
+    `Claude ${ok(v.claudeStatus !== "unavailable")}${v.claudeStatus.includes("simple") ? " (simple mode)" : ""} · ` +
+    `Mic ${ok(v.dictation)} · Voice ${ok(v.tts)} · Saved to ${v.storage}`;
+  $("status").hidden = false;
+}
+
 let booted = false;
 async function boot() {
   try {
     const state = await api("/api/state");
     render(state);
+    renderStatus();
     if (!booted) {
       for (const m of state.history) addMsg(m.content, m.role === "user" ? "user" : "bot");
       if (!state.history.length) {
