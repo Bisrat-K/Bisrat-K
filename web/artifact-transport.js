@@ -58,7 +58,9 @@ function dbPersist(docRef, initial) {
 async function init() {
   const c = globalThis.claude;
   const use = (name) => (c?.use ? c.use(name).catch(() => null) : Promise.resolve(null));
-  const [sample, db, user, dictation, tts] = await Promise.all([use("sample"), use("db"), use("user"), use("dictation"), use("tts")]);
+  const [sample, db, user, dictation, tts, permissions] = await Promise.all(
+    ["sample", "db", "user", "dictation", "tts", "permissions"].map(use),
+  );
 
   // Storage: the private per-user db doc when signed in, else localStorage.
   let persist = localPersist();
@@ -95,7 +97,7 @@ async function init() {
     },
   });
 
-  globalThis.NIGAT_VOICE = { dictation, tts, storage };
+  globalThis.NIGAT_VOICE = { dictation, tts, permissions, storage };
   return route;
 }
 

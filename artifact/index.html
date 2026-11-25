@@ -99,6 +99,12 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px 
 body.night main, body.night .top { filter: brightness(.35); }
 .err-text { color: var(--bad) !important; }
 .card a { color: var(--accent); }
+.tip { width: 100%; background: var(--card); border-radius: var(--radius); padding: 12px 14px; font-size: .9rem; line-height: 1.45; display: flex; flex-direction: column; gap: 8px; }
+.tip p { margin: 0; }
+.tip .am { color: var(--muted); }
+.tip-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.tip-actions button { border: 0; border-radius: 999px; padding: 8px 16px; background: var(--accent); color: #241400; font-weight: 600; }
+.tip-actions .secondary { background: var(--bg2); color: var(--text); margin-top: 0; }
 </style>
 <header class="top">
     <div class="brand">
@@ -137,6 +143,16 @@ body.night main, body.night .top { filter: brightness(.35); }
         <button type="submit">Send</button>
       </form>
       <p id="voiceNote" class="note" hidden></p>
+      <div id="voiceTip" class="tip" hidden>
+        <p id="voiceTipWhy"></p>
+        <p><strong>Speak with your keyboard instead:</strong> tap the text box above, then the 🎤 on your keyboard, and tap Send when you're done.
+          For Amharic on Android, open <em>Gboard › Settings › Languages</em>, add <em>አማርኛ</em>, then switch with the 🌐 key or by long-pressing the space bar.</p>
+        <p class="am">ድምፅዎን ለመጠቀም፦ ከላይ ያለውን የጽሑፍ ሳጥን ይንኩ፣ ከዚያም በኪቦርድዎ ላይ ያለውን 🎤 ይጫኑ።</p>
+        <div class="tip-actions">
+          <button id="allowMic" type="button" hidden>Allow microphone</button>
+          <button id="tipClose" type="button" class="secondary">Got it</button>
+        </div>
+      </div>
     </section>
 
     <section class="panels">

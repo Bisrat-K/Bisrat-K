@@ -153,6 +153,24 @@ function speakWithDevice(text) {
 
 // ---------------- speech in ----------------
 
+const CLAUDE_PAGE = globalThis.NIGAT_MODE === "claude";
+
+// Explain why the mic can't be used here, and offer the keyboard's voice typing.
+function micHelp(reason) {
+  const why = {
+    unsupported: "Voice input isn't offered in this view. The Claude phone app, Safari and Firefox don't support it. Open the link in Chrome instead.",
+    not_granted: "The microphone is turned off for this page.",
+    language: "Claude's dictation doesn't support Amharic yet.",
+    error: "Dictation had a problem just now. Try again in a moment.",
+  }[reason] || "";
+  $("voiceTipWhy").textContent = why;
+  $("voiceTipWhy").hidden = !why;
+  const perms = platformVoice().permissions;
+  $("allowMic").hidden = !(reason === "not_granted" && perms?.manage);
+  $("voiceTip").hidden = false;
+  $("voiceTip").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 // Platform dictation (claude.ai): must start straight from a click.
 function startPlatformDictation(d) {
   const spokenLang = lang;
@@ -175,27 +193,34 @@ function startPlatformDictation(d) {
       if (finalText.trim()) send(finalText, spokenLang);
       else if (reason === "unavailable") {
         platformDictationOff[spokenLang] = true;
-        addMsg(spokenLang === "am"
-          ? "Claude's dictation doesn't take Amharic here. Tap the mic again to try your browser's recognizer, or type."
-          : "Dictation isn't available here. Tap the mic again to try your browser's recognizer, or type.", "sys");
+        micHelp(spokenLang === "am" ? "language" : "unsupported");
       } else if (reason === "not_granted") {
-        platformDictationOff.am = platformDictationOff.en = true;
-        addMsg("Microphone access is off for this page. Turn it on in the page's Permissions menu, or type below.", "err");
+        micHelp("not_granted");
       } else if (reason === "rate_limited" || reason === "upstream_error") {
-        addMsg("Dictation had a problem. Try again in a moment.", "err");
+        micHelp("error");
       }
     }),
   ];
-  d.start({ language: spokenLang }).catch(() => {}); // outcome arrives through onState
+  d.start({ language: spokenLang }).catch((e) => {
+    // Most outcomes arrive through onState; these can fail before it fires.
+    if (e?.code === "no_gesture") micHelp("error");
+  });
 }
 
 function startListening(fromGesture = true) {
   if (listening || busy) return;
+  if (CLAUDE_PAGE && !globalThis.NIGAT_VOICE) { addMsg("Still connecting to Claude. Tap the mic again in a moment.", "sys"); return; }
   const d = platformVoice().dictation;
   if (d && fromGesture && !platformDictationOff[lang]) {
     platformVoice().tts?.stop?.();
     speechSynthesis?.cancel();
+    $("voiceTip").hidden = true;
     return startPlatformDictation(d);
+  }
+  // On claude.ai the browser's own recognizer is blocked, so go to the keyboard tip.
+  if (CLAUDE_PAGE) {
+    if (fromGesture) micHelp(!d ? "unsupported" : lang === "am" ? "language" : "unsupported");
+    return;
   }
   if (!SR) { if (fromGesture) { updateVoiceNote(); $("typeInput").focus(); } return; }
   speechSynthesis?.cancel();
@@ -219,7 +244,7 @@ function startListening(fromGesture = true) {
     $("interim").textContent = (finalText + " " + interim).trim();
   };
   recognition.onerror = (ev) => {
-    if (ev.error === "not-allowed") addMsg("Microphone permission was denied. Allow it in the browser's site settings.", "err");
+    if (ev.error === "not-allowed") { addMsg("Microphone permission was denied. Allow it in the browser's site settings.", "err"); micHelp(""); }
     else if (ev.error === "language-not-supported") addMsg("This browser can't recognise that language. Try Chrome.", "err");
     else if (ev.error !== "no-speech" && ev.error !== "aborted") addMsg(`Speech error: ${ev.error}`, "err");
   };
@@ -468,6 +493,12 @@ $("importFile").onchange = async () => {
 };
 $("changeKey").hidden = !STANDALONE;
 $("changeKey").onclick = () => showKeyPrompt();
+$("tipClose").onclick = () => { $("voiceTip").hidden = true; $("typeInput").focus(); };
+$("allowMic").onclick = async () => {
+  try { await platformVoice().permissions.manage(); } catch { addMsg("Open the page's Permissions menu (top of the page) and turn on dictation.", "sys"); }
+  $("voiceTip").hidden = true;
+};
+if (CLAUDE_PAGE) $("handsfree").closest("label").hidden = true; // needs a tap each time here
 $("passCancel").onclick = () => { $("passcode").hidden = true; };
 
 $("passForm").onsubmit = (e) => {
