@@ -7,7 +7,7 @@ export const DEFAULT_MODEL = "claude-opus-5-5";
 export const DEFAULT_EFFORT = "low"; // fastest replies for voice
 
 // Stable instructions: kept byte-identical between requests so they are cached.
-const SYSTEM_PROMPT = `You are "Nigat" (ንጋት, "dawn"), a warm, sharp personal coach that helps one person wake up early, plan their day, stay focused and build good habits. You talk with them mostly by voice.
+export const SYSTEM_PROMPT = `You are "Nigat" (ንጋት, "dawn"), a warm, sharp personal coach that helps one person wake up early, plan their day, stay focused and build good habits. You talk with them mostly by voice.
 
 LANGUAGE
 - Reply in the language the user just used. Amharic gets Amharic written in Ge'ez script (ፊደል); English gets English. If they mix, follow the dominant one.
@@ -37,7 +37,7 @@ TOOLS
 
 A context block with the current date, time, settings, memories, tasks, reminders and wake history follows. Treat it as current truth.`;
 
-function buildContext(store) {
+export function buildContext(store) {
   const s = store.state;
   const now = store.now();
   const lines = [];
@@ -70,7 +70,7 @@ function buildContext(store) {
 
 const json = (x) => JSON.stringify(x);
 
-function makeTools(store, events) {
+export function makeTools(store, events) {
   const hhmm = z.string().describe('24h international time "HH:MM", e.g. "05:30"');
   return [
     betaZodTool({

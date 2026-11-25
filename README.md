@@ -4,7 +4,11 @@ Nigat ("dawn") is a personal agent you talk to in **Amharic or English**. It set
 
 Claude (`claude-opus-5-5`) does the thinking, and a small set of tools lets it act on your data. Everything is stored on your machine in `data/state.json`.
 
-## Use it on your phone (no computer needed)
+## Easiest: the claude.ai page (no API key, no setup)
+
+Nigat is published as a private page on claude.ai. Open it in Chrome while signed in to Claude. It thinks with your own Claude account, so there's no API key. Your data is saved privately to your account on that page, and it can use Claude's speech-to-text and voice. The source for that edition is built into `artifact/` by `npm run build:web`.
+
+## Use it on your phone via GitHub Pages (your own API key)
 
 The `docs/` folder is a complete version that runs **entirely in your browser**. GitHub Pages hosts it for free and gives you an https link.
 
@@ -87,7 +91,9 @@ src/store.js         Data: settings, memories, tasks, alarms, wake log, journal
 src/persist-file.js  Saves data to data/state.json (server)
 src/time.js          Timezone + Ethiopian-clock helpers
 public/              Voice web app (Web Speech API, alarms, panels)
-web/                 Phone-version glue: localStorage + direct Claude calls
+web/                 Glue for the GitHub Pages build and the claude.ai page
+src/agent-sample.js  Coach for the claude.ai page (Claude via the page's sample capability)
+artifact/            Built claude.ai page (npm run build:web)
 docs/                Built phone version served by GitHub Pages (npm run build:web)
 test/              node --test unit tests
 ```

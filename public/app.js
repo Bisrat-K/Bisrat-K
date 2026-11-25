@@ -79,7 +79,7 @@ async function send(text, spokenLang) {
     addMsg(reply, "bot");
     refresh();
     await speak(reply);
-    if ($("handsfree").checked && !currentAlarm) startListening();
+    if ($("handsfree").checked && !currentAlarm) startListening(false);
   } catch (e) {
     wait.remove();
     addMsg(e.message, "err");
@@ -102,9 +102,15 @@ function pickVoice(code) {
   return matches.find((v) => /google|natural|neural|premium|enhanced/i.test(v.name)) || matches[0] || null;
 }
 
+// Voice provided by the claude.ai host (dictation + Claude voice), when present.
+const platformVoice = () => globalThis.NIGAT_VOICE || {};
+const platformDictationOff = {}; // lang -> true once the platform says it can't serve it
+let platformTtsOff = false;
+let platformListening = false;
+
 function updateVoiceNote() {
   const notes = [];
-  if (!SR) notes.push("Voice input isn't supported in this browser - use Chrome (Android/desktop) or type below.");
+  if (!SR && !platformVoice().dictation) notes.push("Voice input isn't supported in this browser - use Chrome (Android/desktop) or type below.");
   if (lang === "am" && voices.length && !pickVoice("am")) {
     notes.push("No Amharic voice on this device, so Amharic replies are shown as text. On Android: Settings › Text-to-speech › Google › install Amharic.");
   }
@@ -112,7 +118,22 @@ function updateVoiceNote() {
   $("voiceNote").hidden = notes.length === 0;
 }
 
-function speak(text) {
+async function speak(text) {
+  const tts = platformVoice().tts;
+  if (tts && !platformTtsOff) {
+    try {
+      await tts.speak(text.slice(0, 2000), { language: ETHIOPIC.test(text) ? "am" : "en" });
+      return;
+    } catch (e) {
+      if (e?.code === "not_granted") platformTtsOff = true;
+      if (e?.code === "viewer_stopped" || e?.code === "busy") return;
+      // Otherwise fall through to the device voice.
+    }
+  }
+  return speakWithDevice(text);
+}
+
+function speakWithDevice(text) {
   return new Promise((resolve) => {
     if (!("speechSynthesis" in window)) return resolve();
     const isAm = ETHIOPIC.test(text);
@@ -132,9 +153,51 @@ function speak(text) {
 
 // ---------------- speech in ----------------
 
-function startListening() {
-  if (!SR) { updateVoiceNote(); $("typeInput").focus(); return; }
+// Platform dictation (claude.ai): must start straight from a click.
+function startPlatformDictation(d) {
+  const spokenLang = lang;
+  let finalText = "";
+  const show = (partial = "") => {
+    $("interim").hidden = false;
+    $("interim").textContent = (finalText + " " + partial).trim() || (spokenLang === "am" ? "እያዳመጥኩ ነው…" : "Listening…");
+  };
+  const offs = [
+    d.onPartial(({ text }) => show(text)),
+    d.onFinal(({ text }) => { finalText += text; show(); }),
+    d.onState(({ state, reason }) => {
+      if (state === "listening") { listening = true; platformListening = true; $("mic").classList.add("listening"); show(); }
+      if (state !== "idle") return;
+      offs.forEach((off) => off());
+      listening = false;
+      platformListening = false;
+      $("mic").classList.remove("listening");
+      $("interim").hidden = true;
+      if (finalText.trim()) send(finalText, spokenLang);
+      else if (reason === "unavailable") {
+        platformDictationOff[spokenLang] = true;
+        addMsg(spokenLang === "am"
+          ? "Claude's dictation doesn't take Amharic here. Tap the mic again to try your browser's recognizer, or type."
+          : "Dictation isn't available here. Tap the mic again to try your browser's recognizer, or type.", "sys");
+      } else if (reason === "not_granted") {
+        platformDictationOff.am = platformDictationOff.en = true;
+        addMsg("Microphone access is off for this page. Turn it on in the page's Permissions menu, or type below.", "err");
+      } else if (reason === "rate_limited" || reason === "upstream_error") {
+        addMsg("Dictation had a problem. Try again in a moment.", "err");
+      }
+    }),
+  ];
+  d.start({ language: spokenLang }).catch(() => {}); // outcome arrives through onState
+}
+
+function startListening(fromGesture = true) {
   if (listening || busy) return;
+  const d = platformVoice().dictation;
+  if (d && fromGesture && !platformDictationOff[lang]) {
+    platformVoice().tts?.stop?.();
+    speechSynthesis?.cancel();
+    return startPlatformDictation(d);
+  }
+  if (!SR) { if (fromGesture) { updateVoiceNote(); $("typeInput").focus(); } return; }
   speechSynthesis?.cancel();
   recognition = new SR();
   recognition.lang = lang === "am" ? "am-ET" : "en-US";
@@ -169,7 +232,10 @@ function startListening() {
   recognition.start();
 }
 
-function stopListening() { recognition?.stop(); }
+function stopListening() {
+  if (platformListening) platformVoice().dictation?.stop().catch(() => {});
+  else recognition?.stop();
+}
 
 // ---------------- sounds, alarms, reminders ----------------
 function beep(freq = 880, dur = 0.25, when = 0, vol = 0.4) {
@@ -219,6 +285,7 @@ function ringAlarm(r) {
 function stopAlarm() {
   clearInterval(alarmTimer);
   alarmTimer = null;
+  platformVoice().tts?.stop?.();
   speechSynthesis?.cancel();
   $("alarm").hidden = true;
 }
@@ -365,7 +432,7 @@ function setLang(l) {
 document.querySelectorAll(".lang button").forEach((b) => (b.onclick = () => setLang(b.dataset.lang)));
 setLang(lang);
 
-$("mic").onclick = () => (listening ? stopListening() : startListening());
+$("mic").onclick = () => (listening ? stopListening() : startListening(true));
 $("typeForm").onsubmit = (e) => {
   e.preventDefault();
   const v = $("typeInput").value;
@@ -448,4 +515,4 @@ async function boot() {
 }
 boot();
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if ("serviceWorker" in navigator && !globalThis.NIGAT_MODE) navigator.serviceWorker.register("sw.js").catch(() => {});
