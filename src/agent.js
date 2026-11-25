@@ -1,11 +1,10 @@
 // The coach: Claude + a small set of tools over the local store.
-import Anthropic from "@anthropic-ai/sdk";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { ethiopianClock } from "./time.js";
 
-const MODEL = process.env.COACH_MODEL || "claude-opus-5-5";
-const EFFORT = process.env.COACH_EFFORT || "low";
+export const DEFAULT_MODEL = "claude-opus-5-5";
+export const DEFAULT_EFFORT = "low"; // fastest replies for voice
 
 // Stable instructions: kept byte-identical between requests so they are cached.
 const SYSTEM_PROMPT = `You are "Nigat" (ንጋት, "dawn"), a warm, sharp personal coach that helps one person wake up early, plan their day, stay focused and build good habits. You talk with them mostly by voice.
@@ -186,9 +185,16 @@ function makeTools(store, events) {
 }
 
 export class Coach {
-  constructor(store) {
+  /**
+   * @param {import("./store.js").Store} store
+   * @param {import("@anthropic-ai/sdk").default} client an Anthropic client
+   * @param {{ model?: string, effort?: string }} [options]
+   */
+  constructor(store, client, { model, effort } = {}) {
     this.store = store;
-    this.client = new Anthropic();
+    this.client = client;
+    this.model = model || DEFAULT_MODEL;
+    this.effort = effort || DEFAULT_EFFORT;
     this.queue = Promise.resolve(); // serialize turns so history stays consistent
   }
 
@@ -209,11 +215,11 @@ export class Coach {
     const hint = langHint === "am" ? " (spoken in Amharic)" : langHint === "en" ? " (spoken in English)" : "";
 
     const runner = this.client.beta.messages.toolRunner({
-      model: MODEL,
+      model: this.model,
       max_tokens: 4000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      output_config: { effort: EFFORT },
+      output_config: { effort: this.effort },
       system: [
         { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
         { type: "text", text: buildContext(this.store) },

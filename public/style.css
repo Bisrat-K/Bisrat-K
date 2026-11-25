@@ -87,3 +87,5 @@ main { flex: 1; width: 100%; max-width: 720px; margin: 0 auto; padding: 0 16px 3
 .alarm #alarmUp { font-size: 1.3rem; padding: 18px; }
 
 body.night main, body.night .top { filter: brightness(.35); }
+.err-text { color: var(--bad) !important; }
+.card a { color: var(--accent); }

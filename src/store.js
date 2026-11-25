@@ -1,8 +1,6 @@
-// Simple JSON-file storage. Everything the coach learns about you lives in
-// ./data/state.json so it survives restarts and keeps improving over time.
-import fs from "node:fs";
-import path from "node:path";
-import crypto from "node:crypto";
+// Storage for everything the coach learns about you. The data itself is plain
+// JSON; *where* it is kept is pluggable: a file on the server (src/persist-file.js)
+// or the browser's localStorage (web/standalone.js).
 import { localParts, toMinutes, normalizeTime, addDays } from "./time.js";
 
 const DEFAULT_STATE = {
@@ -30,31 +28,43 @@ export const DUE_WINDOW_MINUTES = 15;
 const HISTORY_LIMIT = 40; // messages kept for conversational context
 
 export class Store {
-  constructor(dir, timezone) {
-    this.dir = dir;
-    this.file = path.join(dir, "state.json");
+  /**
+   * @param {{ load(): object|null, save(state: object): void }} persist
+   * @param {string} timezone IANA timezone, e.g. "Africa/Addis_Ababa"
+   */
+  constructor(persist, timezone) {
+    this.persist = persist;
     this.timezone = timezone;
-    fs.mkdirSync(dir, { recursive: true });
     this.state = this.#load();
   }
 
   #load() {
+    let raw = null;
     try {
-      const raw = JSON.parse(fs.readFileSync(this.file, "utf8"));
-      return {
-        ...structuredClone(DEFAULT_STATE),
-        ...raw,
-        settings: { ...DEFAULT_STATE.settings, ...(raw.settings ?? {}) },
-      };
+      raw = this.persist.load();
     } catch {
-      return structuredClone(DEFAULT_STATE);
+      raw = null;
     }
+    if (!raw) return structuredClone(DEFAULT_STATE);
+    return {
+      ...structuredClone(DEFAULT_STATE),
+      ...raw,
+      settings: { ...DEFAULT_STATE.settings, ...(raw.settings ?? {}) },
+    };
   }
 
   save() {
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(this.state, null, 2));
-    fs.renameSync(tmp, this.file);
+    this.persist.save(this.state);
+  }
+
+  /** Restore from a backup (keeps defaults for any missing fields). */
+  replaceState(raw) {
+    this.state = {
+      ...structuredClone(DEFAULT_STATE),
+      ...raw,
+      settings: { ...DEFAULT_STATE.settings, ...(raw.settings ?? {}) },
+    };
+    this.save();
   }
 
   now() {
@@ -62,7 +72,8 @@ export class Store {
   }
 
   #id() {
-    return crypto.randomBytes(3).toString("hex");
+    const b = globalThis.crypto.getRandomValues(new Uint8Array(3));
+    return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
   }
 
   // ---------- settings ----------

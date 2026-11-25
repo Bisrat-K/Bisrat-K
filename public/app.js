@@ -19,18 +19,41 @@ let currentAlarm = null;
 let wakeLock = null;
 
 // ---------------- API ----------------
+const STANDALONE = Boolean(globalThis.NIGAT_STANDALONE);
+const API_KEY_LS = "nigat-api-key";
+
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    ...opts,
-    headers: { "content-type": "application/json", "x-passcode": passcode, ...(opts.headers || {}) },
-  });
-  if (res.status === 401) {
-    $("passcode").hidden = false;
-    throw new Error("Passcode required");
+  const method = opts.method || "GET";
+  let status, body;
+  if (globalThis.NIGAT_TRANSPORT) {
+    // Phone build: everything runs inside this browser.
+    ({ status, body } = await globalThis.NIGAT_TRANSPORT(method, path, opts.body ? JSON.parse(opts.body) : {}));
+  } else {
+    const res = await fetch(path, {
+      ...opts,
+      headers: { "content-type": "application/json", "x-passcode": passcode, ...(opts.headers || {}) },
+    });
+    status = res.status;
+    body = await res.json().catch(() => ({}));
   }
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  if (status === 401) {
+    showKeyPrompt(body.error);
+    throw Object.assign(new Error(body.error || "Passcode required"), { needsKey: true });
+  }
+  if (status >= 400) throw new Error(body.error || `HTTP ${status}`);
   return body;
+}
+
+function showKeyPrompt(message) {
+  if (STANDALONE) {
+    $("passTitle").textContent = "Your Claude API key";
+    $("passHelp").hidden = false;
+    $("passInput").placeholder = "sk-ant-...";
+    $("passInput").value = LS.get(API_KEY_LS, "");
+  }
+  $("passMsg").textContent = message && !/passcode required/i.test(message) ? message : "";
+  $("passMsg").hidden = !$("passMsg").textContent;
+  $("passcode").hidden = false;
 }
 
 // ---------------- chat UI ----------------
@@ -168,7 +191,7 @@ function chime() { beep(660, 0.4, 0, 0.3); beep(880, 0.4, 0.25, 0.3); beep(1320,
 
 function notify(title, body) {
   try {
-    if ("Notification" in window && Notification.permission === "granted") new Notification(title, { body, icon: "/icon.svg" });
+    if ("Notification" in window && Notification.permission === "granted") new Notification(title, { body, icon: "icon.svg" });
   } catch {}
 }
 
@@ -354,12 +377,40 @@ $("clearHistory").onclick = async () => {
   $("chat").innerHTML = "";
   addMsg("Fresh conversation started. Nigat still remembers your profile, tasks and alarms.", "sys");
 };
+$("exportBtn").onclick = async () => {
+  const data = await api("/api/export");
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `nigat-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = async () => {
+  const f = $("importFile").files[0];
+  if (!f) return;
+  try {
+    await api("/api/import", { method: "POST", body: await f.text() });
+    addMsg("Backup restored.", "sys");
+    refresh();
+  } catch (e) {
+    addMsg(`Couldn't restore: ${e.message}`, "err");
+  }
+  $("importFile").value = "";
+};
+$("changeKey").hidden = !STANDALONE;
+$("changeKey").onclick = () => showKeyPrompt();
+$("passCancel").onclick = () => { $("passcode").hidden = true; };
+
 $("passForm").onsubmit = (e) => {
   e.preventDefault();
-  passcode = $("passInput").value;
-  LS.set("passcode", passcode);
+  const v = $("passInput").value.trim();
+  if (STANDALONE) LS.set(API_KEY_LS, v);
+  else { passcode = v; LS.set("passcode", v); }
   $("passcode").hidden = true;
   boot();
+  if (STANDALONE && v) addMsg("Key saved on this device. Tap the mic and say hello! · ማይኩን ይጫኑና ሰላም ይበሉ!", "sys");
 };
 $("handsfree").checked = LS.get("handsfree", "0") === "1";
 $("handsfree").onchange = () => LS.set("handsfree", $("handsfree").checked ? "1" : "0");
@@ -369,6 +420,7 @@ $("startBtn").onclick = async () => {
   beep(880, 0.08, 0, 0.05);
   speechSynthesis?.speak(new SpeechSynthesisUtterance("")); // unlock TTS on iOS
   $("start").hidden = true;
+  if (STANDALONE && !LS.get(API_KEY_LS, "")) showKeyPrompt();
   try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch {}
 };
 
@@ -391,9 +443,9 @@ async function boot() {
       checkDue();
     }
   } catch (e) {
-    if (e.message !== "Passcode required") addMsg(e.message, "err");
+    if (!e.needsKey) addMsg(e.message, "err");
   }
 }
 boot();
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

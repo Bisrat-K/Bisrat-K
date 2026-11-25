@@ -4,11 +4,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Store } from "../src/store.js";
+import { filePersist } from "../src/persist-file.js";
+import { createRouter } from "../src/routes.js";
 import { ethiopianClock, normalizeTime } from "../src/time.js";
 
 function freshStore() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nigat-"));
-  return new Store(dir, "Africa/Addis_Ababa");
+  return new Store(filePersist(dir), "Africa/Addis_Ababa");
 }
 
 const at = (date, time, weekday) => ({ date, time, weekday, minutes: Number(time.slice(0, 2)) * 60 + Number(time.slice(3)) });
@@ -64,7 +66,25 @@ test("state persists to disk", () => {
   const s = freshStore();
   s.remember("Wants to pray Fajr before work", "faith");
   s.addTask({ title: "Finish report", priority: "high" });
-  const again = new Store(s.dir, "Africa/Addis_Ababa");
+  const again = new Store(filePersist(s.persist.dir), "Africa/Addis_Ababa");
   assert.equal(again.state.memories[0].text, "Wants to pray Fajr before work");
   assert.equal(again.openTasks()[0].title, "Finish report");
+});
+
+test("in-memory persistence + router backup/restore", async () => {
+  let saved = null;
+  const mem = { load: () => saved, save: (st) => { saved = structuredClone(st); } };
+  const s = new Store(mem, "UTC");
+  const route = createRouter({ store: s, getCoach: () => { throw new Error("no coach"); } });
+  await route("POST", "/api/wake", { time: "05:00" });
+  s.remember("Likes early runs", "routine");
+  const backup = await route("GET", "/api/export");
+  const s2 = new Store({ load: () => null, save() {} }, "UTC");
+  const route2 = createRouter({ store: s2, getCoach: () => null });
+  await route2("POST", "/api/import", JSON.parse(JSON.stringify(backup)));
+  const state = await route2("GET", "/api/state");
+  assert.equal(state.memories[0].text, "Likes early runs");
+  assert.equal(state.wakeLog.length, 1);
+  await assert.rejects(route2("POST", "/api/import", { nope: 1 }), /backup/);
+  await assert.rejects(route2("GET", "/api/nothing"), /unknown/);
 });

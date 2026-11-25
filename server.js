@@ -6,7 +6,9 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { Store } from "./src/store.js";
+import { filePersist } from "./src/persist-file.js";
 import { Coach } from "./src/agent.js";
+import { createRouter, HttpError } from "./src/routes.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,8 +26,18 @@ const HOST = process.env.HOST || "127.0.0.1";
 const TIMEZONE = process.env.TIMEZONE || "Africa/Addis_Ababa";
 const PASSCODE = process.env.APP_PASSCODE || "";
 
-const store = new Store(path.join(here, "data"), TIMEZONE);
-const coach = new Coach(store);
+const store = new Store(filePersist(path.join(here, "data")), TIMEZONE);
+let coach = null;
+const route = createRouter({
+  store,
+  getCoach() {
+    if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+      throw new HttpError(500, "ANTHROPIC_API_KEY is not set on the server - add it to the .env file and restart.");
+    }
+    coach ??= new Coach(store, new Anthropic(), { model: process.env.COACH_MODEL, effort: process.env.COACH_EFFORT });
+    return coach;
+  },
+});
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -47,7 +59,7 @@ async function readJson(req) {
   const chunks = [];
   for await (const c of req) {
     size += c.length;
-    if (size > 100_000) throw Object.assign(new Error("body too large"), { status: 413 });
+    if (size > 5_000_000) throw Object.assign(new Error("body too large"), { status: 413 });
     chunks.push(c);
   }
   if (!chunks.length) return {};
@@ -65,21 +77,6 @@ function authorized(req) {
   return given.length === want.length && crypto.timingSafeEqual(given, want);
 }
 
-function publicState() {
-  const s = store.state;
-  return {
-    now: store.now(),
-    timezone: store.timezone,
-    settings: s.settings,
-    tasks: s.tasks.filter((t) => !t.done || t.doneAt === store.now().date),
-    reminders: s.reminders,
-    wakeLog: s.wakeLog.slice(-14),
-    streak: store.streak(),
-    memories: s.memories,
-    history: s.history.slice(-12),
-  };
-}
-
 function serveStatic(req, res) {
   const url = new URL(req.url, "http://x");
   let rel = decodeURIComponent(url.pathname);
@@ -95,46 +92,8 @@ function serveStatic(req, res) {
 
 async function handleApi(req, res, pathname) {
   if (!authorized(req)) return send(res, 401, { error: "passcode required" });
-
-  if (req.method === "GET" && pathname === "/api/state") return send(res, 200, publicState());
-
-  if (req.method === "GET" && pathname === "/api/due") return send(res, 200, { due: store.collectDue() });
-
-  if (req.method === "POST" && pathname === "/api/chat") {
-    const { text, lang } = await readJson(req);
-    if (!text || typeof text !== "string" || !text.trim()) return send(res, 400, { error: "text is required" });
-    if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-      return send(res, 500, { error: "ANTHROPIC_API_KEY is not set on the server - add it to the .env file and restart." });
-    }
-    const result = await coach.chat(text.trim().slice(0, 4000), lang);
-    return send(res, 200, result);
-  }
-
-  if (req.method === "POST" && pathname === "/api/wake") {
-    const { time } = await readJson(req);
-    return send(res, 200, store.logWake(time));
-  }
-
-  if (req.method === "POST" && pathname === "/api/history/clear") {
-    store.clearHistory();
-    return send(res, 200, { ok: true });
-  }
-
-  let m;
-  if (req.method === "POST" && (m = /^\/api\/tasks\/([\w-]+)\/done$/.exec(pathname))) {
-    return send(res, 200, { task: store.completeTask(m[1]) });
-  }
-  if (req.method === "DELETE" && (m = /^\/api\/tasks\/([\w-]+)$/.exec(pathname))) {
-    return send(res, 200, { ok: store.deleteTask(m[1]) });
-  }
-  if (req.method === "DELETE" && (m = /^\/api\/reminders\/([\w-]+)$/.exec(pathname))) {
-    return send(res, 200, { ok: store.deleteReminder(m[1]) });
-  }
-  if (req.method === "DELETE" && (m = /^\/api\/memories\/([\w-]+)$/.exec(pathname))) {
-    return send(res, 200, { ok: store.forget(m[1]) });
-  }
-
-  return send(res, 404, { error: "unknown endpoint" });
+  const body = req.method === "POST" ? await readJson(req) : {};
+  return send(res, 200, await route(req.method, pathname, body));
 }
 
 const server = http.createServer(async (req, res) => {

@@ -4,7 +4,20 @@ Nigat ("dawn") is a personal agent you talk to in **Amharic or English**. It set
 
 Claude (`claude-opus-5-5`) does the thinking, and a small set of tools lets it act on your data. Everything is stored on your machine in `data/state.json`.
 
-## Quick start
+## Use it on your phone (no computer needed)
+
+The `docs/` folder is a complete version that runs **entirely in your browser**. GitHub Pages hosts it for free and gives you an https link.
+
+1. **Turn on GitHub Pages (one time):** go to the repo's **Settings › Pages**. Under *Build and deployment*, choose **Deploy from a branch**, pick branch **`claude/voice-productivity-agent-en2jj5`** and folder **`/docs`**, then **Save**.
+2. After a minute, open **https://bisrat-k.github.io/Bisrat-K/** in Chrome on your phone.
+3. Tap **Start · ጀምር** and paste your Anthropic API key. Create one at https://console.anthropic.com/settings/keys, and set a monthly spend limit on it.
+4. In Chrome's menu, choose **Add to Home screen** so it opens like an app.
+
+In this version, your key and everything Nigat learns are stored **only on that phone**. The key is sent only to Anthropic. Use **Download backup** and **Restore backup** (under *What Nigat knows about you*) to move your data to another device.
+
+After changing the code, rebuild the phone version with `npm run build:web` and commit `docs/`.
+
+## Run it on a computer (server version)
 
 ```bash
 npm install
@@ -12,14 +25,13 @@ cp .env.example .env        # then put your Anthropic API key in .env
 npm start                   # open http://localhost:3000 in Chrome
 ```
 
-1. Tap **Start · ጀምር** and allow the microphone and notifications.
-2. Choose **አማርኛ** or **English**, tap the mic, and speak.
-3. Try:
-   - "ከሰኞ እስከ አርብ ጠዋት 11:30 ላይ አስነሳኝ" / "Wake me up at 5:30 every weekday"
-   - "I want to get up at 5 eventually. Right now I wake up at 7."
-   - "ዛሬ ሪፖርቱን መጨረስ አለብኝ" / "Add: finish the report today, high priority"
-   - "Remind me to start winding down at 9:15 every night"
-   - "Let's do my evening review"
+## Things to try
+
+- "ከሰኞ እስከ አርብ ጠዋት 11:30 ላይ አስነሳኝ" / "Wake me up at 5:30 every weekday"
+- "I want to get up at 5 eventually. Right now I wake up at 7."
+- "ዛሬ ሪፖርቱን መጨረስ አለብኝ" / "Add: finish the report today, high priority"
+- "Remind me to start winding down at 9:15 every night"
+- "Let's do my evening review"
 
 ## How it gets better
 
@@ -42,9 +54,9 @@ npm start                   # open http://localhost:3000 in Chrome
 - **Alarms only ring while the app is open.** Before you sleep, tap **Night mode**: it keeps the screen on and dims it. Leave the phone plugged in, and keep your normal phone alarm as a backup until you trust it.
 - When the alarm rings, tap **I'm up! · ተነስቻለሁ!**. That logs your wake-up time and starts your morning briefing.
 
-## Using it from your phone
+## Running the server version for your phone
 
-The server holds your API key, so run it somewhere you control:
+If you'd rather keep your key on a server instead of the phone, run the server version somewhere you control:
 
 - **Same computer:** open `http://localhost:3000`.
 - **Phone:** the mic needs https. Either deploy to a host that gives you https (Render, Railway, Fly.io, a VPS with Caddy) or put an https tunnel in front of your computer (for example `cloudflared tunnel --url http://localhost:3000`). In both cases:
@@ -68,11 +80,15 @@ The server-side refusal fallback (`fallbacks: "default"`) is on, so if the main 
 ## Project layout
 
 ```
-server.js          HTTP server + JSON API (no framework)
-src/agent.js       Claude agent: system prompt, context, tools
-src/store.js       JSON storage: settings, memories, tasks, alarms, wake log, journal
-src/time.js        Timezone + Ethiopian-clock helpers
-public/            Voice web app (Web Speech API, alarms, panels), installable as a PWA
+server.js            HTTP server (computer version)
+src/agent.js         Claude agent: system prompt, context, tools
+src/routes.js        The app's API, shared by the server and phone versions
+src/store.js         Data: settings, memories, tasks, alarms, wake log, journal
+src/persist-file.js  Saves data to data/state.json (server)
+src/time.js          Timezone + Ethiopian-clock helpers
+public/              Voice web app (Web Speech API, alarms, panels)
+web/                 Phone-version glue: localStorage + direct Claude calls
+docs/                Built phone version served by GitHub Pages (npm run build:web)
 test/              node --test unit tests
 ```
 
